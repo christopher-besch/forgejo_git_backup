@@ -10,6 +10,10 @@ from github.Repository import Repository as GithubRepository
 
 from pyforgejo import PyforgejoApi
 from pyforgejo.errors.conflict_error import ConflictError
+from pyforgejo import Repository as ForgejoRepository
+
+from gitlab import Gitlab
+from gitlab.v4.objects import Project as GitlabProject
 
 
 class Repo:
@@ -27,9 +31,12 @@ class Repo:
         self.target_org = target_org
         self.target_name = target_name
 
+    def __str__(self) -> str:
+        return f"{self.orig_url} -> {self.target_org}/{self.target_name}"
+
 
 def get_github_com_repos() -> Iterable[Repo]:
-    print("getting github repos")
+    print("getting github.com repos")
     username = os.environ["GITHUB_COM_USERNAME"]
     password = os.environ["GITHUB_COM_PASSWORD"]
     github_client = Github(username, password)
@@ -49,11 +56,85 @@ def get_github_com_repos() -> Iterable[Repo]:
 
 
 def get_codeberg_org_repos() -> Iterable[Repo]:
-    return []
+    print("getting codeberg.org repos")
+    # all repositories
+    # repository: read
+    # user: read
+    username = os.environ["CODEBRG_ORG_USERNAME"]
+    password = os.environ["CODEBRG_ORG_PASSWORD"]
+
+    codeberg_client = PyforgejoApi(
+        base_url="https://codeberg.org/api/v1",
+        api_key=f"token {password}",
+        timeout=1000000,
+    )
+    user = codeberg_client.user.get_current()
+    uid = user.id
+    search_result = codeberg_client.repository.repo_search(uid=uid)
+    if not search_result.ok:
+        raise ValueError("codeberg repo query failure")
+
+    def codeberg_org_repo_to_forgejo_mirror(repo: ForgejoRepository) -> Repo:
+        return Repo(
+            orig_url=str(repo.html_url),
+            auth_username=username,
+            auth_password=password,
+            target_org="backup_codeberg_org",
+            target_name=str(repo.full_name).replace("/", "_"),
+        )
+
+    if search_result.data is None:
+        raise ValueError
+
+    return map(
+        codeberg_org_repo_to_forgejo_mirror,
+        search_result.data,
+    )
+
+
+def get_gitlab_kit_edu_repos() -> Iterable[Repo]:
+    print("getting gitlab.kit.edu repos")
+    username = os.environ["GITLAB_KIT_EDU_USERNAME"]
+    password = os.environ["GITLAB_KIT_EDU_PASSWORD"]
+
+    gitlab_client = Gitlab(url="https://gitlab.kit.edu", private_token=password)
+    projects_list = gitlab_client.projects.list(
+        all=True, iterator=True, membership=True
+    )
+
+    def gitlab_kit_edu_repo_to_forgejo_mirror(project: GitlabProject) -> Repo:
+        return Repo(
+            orig_url=project.http_url_to_repo,
+            auth_username=username,
+            auth_password=password,
+            target_org="backup_gitlab_kit_edu",
+            target_name=project.name_with_namespace.replace("/", "_")
+            .replace(" ", "")
+            .replace("ä", "ae")
+            .replace("ö", "oe")
+            .replace("ü", "ue")
+            .replace("Ä", "Ae")
+            .replace("Ö", "Oe")
+            .replace("Ü", "Ue"),
+        )
+
+    return map(gitlab_kit_edu_repo_to_forgejo_mirror, projects_list)
 
 
 def create_mirror(forgejo_client: PyforgejoApi, repo: Repo) -> None:
-    print(f"create mirror: {repo.orig_url}")
+    skip_repos = [
+        "https://github.com/cct-group/ilias",
+        "https://github.com/christopher-besch/literature",
+        "https://github.com/christopher-besch/mc_missile",
+        "https://github.com/christopher-besch/mc_missile_guidance",
+        "https://github.com/christopher-besch/docker_setups",
+        "https://codeberg.org/christopher-besch/forgejo",
+        "https://codeberg.org/christopher-besch/forgejo_docs",
+    ]
+    if repo.orig_url in skip_repos:
+        print(f"skipping: {repo}")
+        return
+    print(f"create mirror: {repo}")
     try:
         forgejo_client.repository.repo_migrate(
             clone_addr=repo.orig_url,
@@ -79,14 +160,23 @@ def main():
     repos: List[Repo] = []
     repos += get_github_com_repos()
     repos += get_codeberg_org_repos()
+    repos += get_gitlab_kit_edu_repos()
+
+    print(f"creating {len(repos)} mirrors")
+
+    # print("\n".join([str(repo) for repo in repos]))
+    # return
 
     forgejo_client = PyforgejoApi(
         base_url="https://code.chris-besch.com/api/v1",
-        api_key=os.environ["CHRIS_CODE_TOKEN"],
+        api_key=f"token {os.environ['CHRIS_CODE_TOKEN']}",
         timeout=1000000,
     )
     for repo in repos:
         create_mirror(forgejo_client, repo)
+
+    print("All done.")
+    print("Have a nice day.")
 
 
 if __name__ == "__main__":
