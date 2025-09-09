@@ -128,6 +128,8 @@ def create_mirror(forgejo_client: PyforgejoApi, repo: Repo) -> None:
         "https://github.com/christopher-besch/mc_missile",
         "https://github.com/christopher-besch/mc_missile_guidance",
         "https://github.com/christopher-besch/docker_setups",
+        # TODO: delete this one from code.chris-besch.com
+        "https://github.com/christopher-besch/configs",
         "https://codeberg.org/christopher-besch/forgejo",
         "https://codeberg.org/christopher-besch/forgejo_docs",
     ]
