@@ -1,3 +1,5 @@
+# Migrated to the better Git Forge: https://codeberg.org/christopher-besch/forgejo_git_backup
+
 # Forgejo Git Backup
 
 - Create `.env` file with in own directory, enter that directory afterwards:
